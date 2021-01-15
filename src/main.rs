@@ -1,5 +1,7 @@
 //! A simple scrolling spotifyd status tool
 //! Reads metadata using playerctl and buffers it for more robust operation
+//! Will not fail if spotifyd is not running, no song is playing,
+//! or if playerctl fails to retrieve metadata, but handle that gracefully.
 
 use std::cmp::min;
 use std::process::Command;
@@ -64,12 +66,18 @@ fn main() {
                 scroll_amount = 0
             }
 
-            // Move slice by one
-            // TODO: This is not Unicode safe yet!
+            // This may be zero, even if the buffer is 1 charactor long!
             let half_length = buffer.len() / 2;
-            let display_width = min(MAX_WIDTH, half_length);
-            scroll_amount = (scroll_amount + 1) % half_length;
-            sliced = &buffer[scroll_amount..scroll_amount + display_width];
+
+            // Don't try to calculate anything else, it's not going to be possible
+            if half_length == 0 {
+                sliced = &buffer;
+            } else {
+                // Move slice by one
+                scroll_amount = (scroll_amount + 1) % half_length;
+                // TODO: This is not Unicode safe yet!
+                sliced = &buffer[scroll_amount..scroll_amount + min(MAX_WIDTH, half_length)];
+            }
         }
 
         println!("{}", sliced);
