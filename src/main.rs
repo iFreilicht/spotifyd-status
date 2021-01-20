@@ -35,17 +35,17 @@ fn playerctl_output() -> Option<String> {
         .output()
         .expect("Failed to execute playerctl!");
 
-    // We can't process any further if we didn't get valid output
-    // This can happen if the track is paused or spotifyd didn't respond to the request
     if output.status.code() != Some(0) {
-        return None;
+        // We can't process any further if we didn't get valid output
+        // This can happen if the track is paused or spotifyd didn't respond to the request
+        None
+    } else {
+        Some(
+            String::from_utf8_lossy(&output.stdout)
+                .trim_end_matches(|c: char| c == '\n')
+                .into(),
+        )
     }
-
-    Some(
-        String::from_utf8_lossy(&output.stdout)
-            .trim_end_matches(|c: char| c == '\n')
-            .into(),
-    )
 }
 
 /// Scroll the buffer over unicode graphemes
