@@ -3,18 +3,15 @@
 //! Will not fail if spotifyd is not running, no song is playing,
 //! or if playerctl fails to retrieve metadata, but handle that gracefully.
 
-use std::cmp::min;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
-
-// Divider between scrolling instances of spotifyd output
-const DIVIDER: &str = " - ";
+use unicode_segmentation::UnicodeSegmentation;
 
 // Format specification to pass to playerctl. To see the potential options, run
 // $ playerctl --player=spotifyd metadata
 // and check the playerctl man pages, searching for "Format Strings"
-const FORMAT: &str = "{{ artist }}: {{ album }}: {{ title }}";
+const FORMAT: &str = " {{ artist }}  {{ album }}  {{ title }} - ";
 
 // How long to sleep between each iteration
 const DELAY: Duration = Duration::from_millis(300);
@@ -44,75 +41,59 @@ fn playerctl_output() -> Option<String> {
         return None;
     }
 
-    Some(String::from_utf8_lossy(&output.stdout).into())
+    Some(
+        String::from_utf8_lossy(&output.stdout)
+            .trim_end_matches(|c: char| c == '\n')
+            .into(),
+    )
 }
 
-/// Format the buffer to contain the divider and a second copy of itself to ease scrolling
-fn format_buffer(playerctl_output: &str) -> String {
-    let mut buffer: String = playerctl_output.into();
-    buffer.pop(); // Remove trailing newline
-    buffer.push_str(DIVIDER);
-
-    // We need two copies back-to-back so the string slice seemlingly wraps around
-    buffer.push_str(&buffer.clone());
+/// Scroll the buffer over unicode graphemes
+fn scroll_by(buffer: &str, scroll_amount: usize) -> String {
     buffer
-}
-
-fn scroll_by(buffer: &str, scroll_amount: usize) -> &str {
-    // This may be zero, even if the buffer is 1 charactor long!
-    let half_length = buffer.len() / 2;
-
-    // Don't try to calculate anything else, it's not going to be possible
-    if half_length == 0 {
-        buffer
-    } else {
-        // TODO: This is not Unicode safe yet!
-        &buffer[scroll_amount..scroll_amount + min(MAX_WIDTH, half_length)]
-    }
+        .graphemes(true)
+        .cycle()
+        .skip(scroll_amount)
+        .take(MAX_WIDTH)
+        .collect()
 }
 
 fn advance_scroll_amount(buffer: &str, scroll_amount: usize) -> usize {
-    if buffer.len() <= MAX_WIDTH {
-        return 0;
-    }
+    // We need to count graphemes so the scrolling resets at the correct position
+    let num_graphemes = buffer.graphemes(true).count();
 
-    // Move slice by one
-    (scroll_amount + 1) % (buffer.len() / 2)
+    if num_graphemes <= MAX_WIDTH {
+        0
+    } else {
+        (scroll_amount + 1) % num_graphemes
+    }
 }
 
 fn main() {
-    let mut last_valid_output: String = String::new();
     let mut buffer: String = String::new();
     let mut scroll_amount: usize = 0;
     loop {
-        // String slice that scrolls through the buffer
-        let mut sliced: &str = "";
-
         // Check whether spotify is even running first
         if !is_spotifyd_running() {
-            // Clear buffers so we detect change properly when spotifyd comes back
+            // Clear buffer so we detect change properly when spotifyd comes back
             buffer.clear();
-            last_valid_output.clear();
         } else {
             // Process output only if playerctl ran successfully. Otherwise, the previously received
             // output is reused. This is useful as playerctl will randomly fail with spotifyd:
             // https://github.com/Spotifyd/spotifyd/issues/557
             if let Some(output) = playerctl_output() {
-                if output != last_valid_output {
-                    // Read changed output to buffer and format it
-                    last_valid_output = output;
-                    buffer = format_buffer(&last_valid_output);
+                if output != buffer {
+                    // Read changed output to buffer
+                    buffer = output;
 
                     // Reset slice position for new track
                     scroll_amount = 0;
                 }
             }
-
-            sliced = scroll_by(&buffer, scroll_amount);
         }
 
         // Polybar will re-draw a custom script on every new line it outputs
-        println!("{}", sliced);
+        println!("{}", scroll_by(&buffer, scroll_amount));
 
         if scroll_amount == 0 {
             // If this is a new track, wait for a while before starting to scroll
