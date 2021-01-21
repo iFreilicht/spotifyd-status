@@ -4,6 +4,7 @@
 //! or if playerctl fails to retrieve metadata, but handle that gracefully.
 
 use std::process::Command;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
@@ -13,8 +14,11 @@ use unicode_segmentation::UnicodeSegmentation;
 // and check the playerctl man pages, searching for "Format Strings"
 const FORMAT: &str = " {{ artist }}  {{ album }}  {{ title }} - ";
 
-// How long to sleep between each iteration
-const DELAY: Duration = Duration::from_millis(300);
+// How long to wait to scroll one letter further
+const SCROLL_DELAY: Duration = Duration::from_millis(300);
+
+// How long to wait before polling playerctl for spotifyd's metadata again
+const POLL_DELAY: Duration = Duration::from_secs(4);
 
 // Maximum number of characters in the output
 const MAX_WIDTH: usize = 20;
@@ -72,23 +76,30 @@ fn advance_scroll_amount(buffer: &str, scroll_amount: usize) -> usize {
 fn main() {
     let mut buffer: String = String::new();
     let mut scroll_amount: usize = 0;
-    loop {
-        // Check whether spotify is even running first
-        if !is_spotifyd_running() {
-            // Clear buffer so we detect change properly when spotifyd comes back
-            buffer.clear();
-        } else {
-            // Process output only if playerctl ran successfully. Otherwise, the previously received
-            // output is reused. This is useful as playerctl will randomly fail with spotifyd:
-            // https://github.com/Spotifyd/spotifyd/issues/557
-            if let Some(output) = playerctl_output() {
-                if output != buffer {
-                    // Read changed output to buffer
-                    buffer = output;
+    let (tx, rx) = mpsc::channel();
 
-                    // Reset slice position for new track
-                    scroll_amount = 0;
-                }
+    // Update the track metadata in a separate thread with more delay between each update
+    // to mitigate rate limiting spotify imposes on API calls
+    thread::spawn(move || loop {
+        if is_spotifyd_running() {
+            tx.send(playerctl_output()).unwrap();
+        }
+
+        thread::sleep(POLL_DELAY);
+    });
+
+    // Scroll through the buffer in an endless loop
+    loop {
+        // Process output only if playerctl ran successfully. Otherwise, the previously received
+        // output is reused. This is useful as playerctl will randomly fail with spotifyd:
+        // https://github.com/Spotifyd/spotifyd/issues/557
+        if let Ok(Some(output)) = rx.try_recv() {
+            if output != buffer {
+                // Read changed output to buffer
+                buffer = output;
+
+                // Reset slice position for new track
+                scroll_amount = 0;
             }
         }
 
@@ -98,9 +109,9 @@ fn main() {
         if scroll_amount == 0 {
             // If this is a new track, wait for a while before starting to scroll
             // This makes the track easier to read initially
-            thread::sleep(DELAY * 10);
+            thread::sleep(SCROLL_DELAY * 10);
         } else {
-            thread::sleep(DELAY);
+            thread::sleep(SCROLL_DELAY);
         }
         scroll_amount = advance_scroll_amount(&buffer, scroll_amount);
     }
