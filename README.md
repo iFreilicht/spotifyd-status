@@ -37,6 +37,6 @@ everytime you re-compile.
 
 # TODO
 
-- [ ] Allow UTF-8 strings to be used for formatting
-- [ ] Enable setting parameters other than by recompiling
-- [ ] Clear output if spotifyd didn't respond for a long time
+- [x] Allow UTF-8 strings to be used for formatting
+- [x] Clear output when client disconnects
+- [ ] Enable setting parameters by something other than recompiling

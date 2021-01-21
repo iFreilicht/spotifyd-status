@@ -23,33 +23,32 @@ const POLL_DELAY: Duration = Duration::from_secs(4);
 // Maximum number of characters in the output
 const MAX_WIDTH: usize = 20;
 
-fn is_spotifyd_running() -> bool {
-    Command::new("pgrep")
-        .arg("spotifyd")
-        .output()
-        .expect("Failed to execute pgrep!")
-        .status
-        .success()
-}
-
 /// Run playerctl to get info about currently playing track
-fn playerctl_output() -> Option<String> {
-    let output = Command::new("playerctl")
+fn playerctl_output() -> String {
+    // Check status of spotifyd
+    let status = Command::new("playerctl")
+        .args(&["--player=spotifyd", "status"])
+        .output()
+        .expect("Failed to execute playerctl!");
+
+    // Spotifyd is not running
+    if status.status.code() != Some(0)
+        // Or no client is connected
+        || String::from_utf8_lossy(&status.stdout).starts_with("Stopped")
+    {
+        // Nothing to display. Empty string will make the status bar disappear
+        return String::new();
+    }
+
+    let metadata = Command::new("playerctl")
         .args(&["--player=spotifyd", "metadata", "--format", FORMAT])
         .output()
         .expect("Failed to execute playerctl!");
 
-    if output.status.code() != Some(0) {
-        // We can't process any further if we didn't get valid output
-        // This can happen if the track is paused or spotifyd didn't respond to the request
-        None
-    } else {
-        Some(
-            String::from_utf8_lossy(&output.stdout)
-                .trim_end_matches(|c: char| c == '\n')
-                .into(),
-        )
-    }
+    // If no metadata could be fetched, stdout will just be an empty string
+    String::from_utf8_lossy(&metadata.stdout)
+        .trim_end_matches(|c: char| c == '\n')
+        .into()
 }
 
 /// Scroll the buffer over unicode graphemes
@@ -81,10 +80,7 @@ fn main() {
     // Update the track metadata in a separate thread with more delay between each update
     // to mitigate rate limiting spotify imposes on API calls
     thread::spawn(move || loop {
-        if is_spotifyd_running() {
-            tx.send(playerctl_output()).unwrap();
-        }
-
+        tx.send(playerctl_output()).unwrap();
         thread::sleep(POLL_DELAY);
     });
 
@@ -93,7 +89,7 @@ fn main() {
         // Process output only if playerctl ran successfully. Otherwise, the previously received
         // output is reused. This is useful as playerctl will randomly fail with spotifyd:
         // https://github.com/Spotifyd/spotifyd/issues/557
-        if let Ok(Some(output)) = rx.try_recv() {
+        if let Ok(output) = rx.try_recv() {
             if output != buffer {
                 // Read changed output to buffer
                 buffer = output;
