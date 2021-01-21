@@ -18,6 +18,9 @@ const FORMAT: &str = " {{ artist }}  {{ album }}  {{ title }} - ";
 const SCROLL_DELAY: Duration = Duration::from_millis(300);
 
 // How long to wait before polling playerctl for spotifyd's metadata again
+// 4 seconds is conservative but very reliable. To test if we can go further down,
+// run `spotifyd --no-daemon` in a separate terminal and check for errors like this:
+//     Couldn't fetch metadata from spotify: Err(RateLimited(Some(<num>)))
 const POLL_DELAY: Duration = Duration::from_secs(4);
 
 // Maximum number of characters in the output
