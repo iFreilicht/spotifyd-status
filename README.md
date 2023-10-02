@@ -25,7 +25,7 @@ Put the following in your `polybar/config` file (replacing `<path>/<to>` appropr
 And make sure to add it to your bar's modules:
 
     [bar/primary]
-    modules-right =  tray spotify pulseaudio date battery powermenu
+    modules-right =  tray spotifyd pulseaudio date battery powermenu
 
 After that, re-launch polybar:
 
