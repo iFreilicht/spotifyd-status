@@ -14,7 +14,11 @@ use unicode_segmentation::UnicodeSegmentation;
 // and check the playerctl man pages, searching for "Format Strings"
 const FORMAT: &str = " {{ artist }}  {{ album }}  {{ title }} - ";
 
+// String to add when truncating. A good choice is …
+const TRUNCATE_FORMAT: &str = "";
+
 // How long to wait to scroll one letter further
+// Set to 0 to disable scrolling
 const SCROLL_DELAY: Duration = Duration::from_millis(300);
 
 // How long to wait before polling playerctl for spotifyd's metadata again
@@ -56,12 +60,27 @@ fn playerctl_output() -> String {
 
 /// Scroll the buffer over unicode graphemes
 fn scroll_by(buffer: &str, scroll_amount: usize) -> String {
-    buffer
-        .graphemes(true)
-        .cycle()
-        .skip(scroll_amount)
-        .take(MAX_WIDTH)
-        .collect()
+    fn truncate_length() -> usize {
+        TRUNCATE_FORMAT.graphemes(true).count()
+    }
+
+    let graphemes = buffer.graphemes(true);
+
+    if graphemes.clone().count() < MAX_WIDTH {
+        graphemes.collect()
+    } else if SCROLL_DELAY == Duration::ZERO {
+        graphemes
+            .take(MAX_WIDTH - truncate_length())
+            .chain(TRUNCATE_FORMAT.graphemes(true))
+            .collect()
+    } else {
+        graphemes
+            .cycle()
+            .skip(scroll_amount)
+            .take(MAX_WIDTH - truncate_length())
+            .chain(TRUNCATE_FORMAT.graphemes(true))
+            .collect()
+    }
 }
 
 fn advance_scroll_amount(buffer: &str, scroll_amount: usize) -> usize {
@@ -105,13 +124,19 @@ fn main() {
         // Polybar will re-draw a custom script on every new line it outputs
         println!("{}", scroll_by(&buffer, scroll_amount));
 
-        if scroll_amount == 0 {
-            // If this is a new track, wait for a while before starting to scroll
-            // This makes the track easier to read initially
-            thread::sleep(SCROLL_DELAY * 10);
+        if SCROLL_DELAY == Duration::ZERO {
+            // Even without scrolling we need to update regularly as
+            // polybar might not have read our output yet
+            thread::sleep(POLL_DELAY / 4);
         } else {
-            thread::sleep(SCROLL_DELAY);
+            if scroll_amount == 0 {
+                // If this is a new track, wait for a while before starting to scroll
+                // This makes the track easier to read initially
+                thread::sleep(SCROLL_DELAY * 10);
+            } else {
+                thread::sleep(SCROLL_DELAY);
+            }
+            scroll_amount = advance_scroll_amount(&buffer, scroll_amount);
         }
-        scroll_amount = advance_scroll_amount(&buffer, scroll_amount);
     }
 }
