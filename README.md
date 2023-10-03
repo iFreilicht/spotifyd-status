@@ -35,8 +35,12 @@ And you're good to go!
 Because this script is stateful and runs forever, you need to re-launch polybar
 everytime you re-compile.
 
-# TODO
+# Configuration
 
-- [x] Allow UTF-8 strings to be used for formatting
-- [x] Clear output when client disconnects
-- [ ] Enable setting parameters by something other than recompiling
+This tool has no configuration file, but you can change all options by editing
+[src/main.rs](src/main.rs). All options are explained in that file as well.
+
+Once you're done changing the options, re-compile and re-launch polybar to see your changes:
+
+    cargo build --release
+    ~/.config/polybar/launch.sh
